@@ -5,8 +5,6 @@ on:
     # 每天 UTC+8 时间 00:01 运行 (UTC 16:01)
     - cron: '1 16 * * *'
   workflow_dispatch: # 允许手动触发
-  push:
-    branches: [ main ]
 
 jobs:
   signin:
@@ -20,10 +18,34 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        cache: 'npm'
         
-    - name: 安装依赖
-      run: npm ci
+    - name: 创建基础 package.json
+      run: |
+        if [ ! -f package.json ]; then
+          cat > package.json << EOF
+          {
+            "name": "luogu-auto-signin",
+            "version": "1.0.0",
+            "description": "洛谷自动签到 GitHub Actions 版本",
+            "main": "scripts/luogu-signin.js",
+            "scripts": {
+              "signin": "node scripts/luogu-signin.js"
+            },
+            "keywords": ["luogu", "signin", "github-actions"],
+            "author": "Auto Script",
+            "license": "MIT",
+            "engines": {
+              "node": ">=18.0.0"
+            }
+          }
+          EOF
+        fi
+        
+    - name: 生成 package-lock.json
+      run: npm install --package-lock-only
+      
+    - name: 创建数据目录
+      run: mkdir -p .data
       
     - name: 执行洛谷签到
       env:
