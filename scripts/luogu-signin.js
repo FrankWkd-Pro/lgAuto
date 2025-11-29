@@ -2,21 +2,20 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-// 时区偏移计算 (UTC+8)
-const tz_offset = new Date().getTimezoneOffset() + 480;
-
 // 存储文件路径
 const DATA_FILE = path.join(__dirname, '../.data/luogu-signin.json');
 
-// 检查是否为新的一天
+// 检查是否为新的一天 (UTC+8)
 const checkNewDay = (ts) => {
-    const t = new Date(ts);
-    t.setMinutes(t.getMinutes() + tz_offset);
-    t.setHours(0, 0, 0, 0);
-    const d = new Date();
-    d.setMinutes(d.getMinutes() + tz_offset);
-    d.setHours(0, 0, 0, 0);
-    return (d.getTime() > t.getTime());
+    const now = new Date();
+    const lastSign = new Date(ts);
+    
+    // 转换为 UTC+8 时间
+    const nowUTC8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+    const lastSignUTC8 = new Date(lastSign.getTime() + (8 * 60 * 60 * 1000));
+    
+    // 比较日期 (年-月-日)
+    return nowUTC8.toDateString() !== lastSignUTC8.toDateString();
 };
 
 // 读取存储的数据
@@ -27,9 +26,9 @@ const readStoredData = () => {
             return JSON.parse(data);
         }
     } catch (error) {
-        console.log('读取存储数据失败，将创建新文件:', error.message);
+        console.log('读取存储数据失败，将创建新文件');
     }
-    return { ts: 0, notified: false };
+    return { ts: 0 };
 };
 
 // 写入存储的数据
@@ -47,8 +46,8 @@ const writeStoredData = (data) => {
     }
 };
 
-// 发送 HTTP 请求
-const sendRequest = () => {
+// 发送签到请求
+const sendSignRequest = () => {
     return new Promise((resolve, reject) => {
         const cookie = process.env.LUOGU_COOKIE;
         
@@ -64,11 +63,9 @@ const sendRequest = () => {
             method: 'GET',
             headers: {
                 'Cookie': cookie,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Referer': 'https://www.luogu.com.cn/',
-                'Origin': 'https://www.luogu.com.cn'
+                'Referer': 'https://www.luogu.com.cn/'
             },
             timeout: 10000
         };
@@ -85,7 +82,7 @@ const sendRequest = () => {
                     const response = JSON.parse(data);
                     resolve(response);
                 } catch (error) {
-                    reject(new Error(`解析响应失败: ${error.message}, 响应数据: ${data}`));
+                    reject(new Error(`解析响应失败: ${error.message}`));
                 }
             });
         });
@@ -103,66 +100,52 @@ const sendRequest = () => {
     });
 };
 
-// 主签到函数
-const sign = async () => {
-    const storedData = readStoredData();
-    
-    if (!storedData.notified) {
-        console.log('首次运行洛谷自动签到脚本');
-        storedData.notified = true;
-        writeStoredData(storedData);
-    }
-
-    try {
-        const response = await sendRequest();
-        console.log('响应:', JSON.stringify(response, null, 2));
-        
-        const code = parseInt(response.code);
-        switch (code) {
-            case 200: {
-                console.log('✅ 洛谷签到成功!');
-                storedData.ts = Date.now();
-                writeStoredData(storedData);
-                break;
-            }
-            case 201: {
-                console.log(`❌ 签到失败: ${response.message}`);
-                if (response.message && response.message.indexOf("已经打过卡") > -1) {
-                    storedData.ts = Date.now();
-                    writeStoredData(storedData);
-                    console.log('📝 已记录本次签到时间');
-                }
-                break;
-            }
-            default: {
-                console.log('❓ 未知错误:', response);
-            }
-        }
-    } catch (error) {
-        console.error('💥 请求签到时发生错误:', error.message);
-        process.exit(1);
-    }
-};
-
-// 主执行逻辑
+// 主函数
 const main = async () => {
+    console.log('🚀 开始检查洛谷签到状态...');
+    
     const storedData = readStoredData();
+    const currentTime = new Date().toLocaleString('zh-CN');
+    
+    console.log(`📅 当前时间: ${currentTime}`);
+    console.log(`📝 上次签到时间: ${storedData.ts ? new Date(storedData.ts).toLocaleString('zh-CN') : '从未签到'}`);
     
     if (!storedData.ts || checkNewDay(storedData.ts)) {
-        console.log('🔄 开始执行洛谷签到...');
-        await sign();
+        console.log('🔄 开始执行签到...');
+        
+        try {
+            const response = await sendSignRequest();
+            console.log('📨 服务器响应:', JSON.stringify(response));
+            
+            const code = parseInt(response.code);
+            switch (code) {
+                case 200:
+                    console.log('✅ 洛谷签到成功!');
+                    storedData.ts = Date.now();
+                    writeStoredData(storedData);
+                    break;
+                case 201:
+                    console.log(`❌ 签到失败: ${response.message}`);
+                    if (response.message && response.message.includes("已经打过卡")) {
+                        storedData.ts = Date.now();
+                        writeStoredData(storedData);
+                        console.log('📝 已更新签到时间');
+                    }
+                    break;
+                default:
+                    console.log('❓ 未知响应:', response);
+            }
+        } catch (error) {
+            console.error('💥 签到过程中发生错误:', error.message);
+        }
     } else {
         console.log('⏭️  今天已经签到过了，跳过执行');
-        
-        // 显示下次签到时间
-        const nextSignTime = new Date(storedData.ts);
-        nextSignTime.setDate(nextSignTime.getDate() + 1);
-        nextSignTime.setHours(0, 0, 0, 0);
-        console.log(`⏰ 下次签到时间: ${nextSignTime.toLocaleString('zh-CN')}`);
     }
+    
+    console.log('🎉 签到流程执行完毕');
 };
 
-// 运行主函数
+// 执行主函数
 main().catch(error => {
     console.error('💥 脚本执行失败:', error);
     process.exit(1);
