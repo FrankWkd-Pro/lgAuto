@@ -1,0 +1,15 @@
+{
+  "name": "luogu-auto-signin",
+  "version": "1.0.0",
+  "description": "洛谷自动签到 GitHub Actions 版本",
+  "main": "scripts/luogu-signin.js",
+  "scripts": {
+    "signin": "node scripts/luogu-signin.js"
+  },
+  "keywords": ["luogu", "signin", "github-actions"],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
